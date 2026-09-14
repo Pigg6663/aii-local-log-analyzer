@@ -49,7 +49,10 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
         emit failed("日志文件为空，没有可分析的内容");
         return;
     }
-    if (m_cancelled) { emit failed("已取消"); return; }
+    if (m_cancelled) {
+        finishCancelled(QVector<AnomalyFinding>(), stats, "日志解析后（检测尚未开始）");
+        return;
+    }
 
     // ---- 阶段 2：分块 ----
     emit progressChanged(5, 100, QString("切分日志块（共 %1 行）").arg(entries.size()));
@@ -71,7 +74,10 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
     } else {
         chunks = allChunks;
     }
-    if (m_cancelled) { emit failed("已取消"); return; }
+    if (m_cancelled) {
+        finishCancelled(QVector<AnomalyFinding>(), stats, "日志分块后（检测尚未开始）");
+        return;
+    }
 
     // ---- 阶段 3：逐块 LLM 检测 ----
     const QString systemPrompt = PromptBuilder::systemPrompt();
@@ -80,7 +86,11 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
     const int total = chunks.size();
 
     for (int i = 0; i < total; ++i) {
-        if (m_cancelled) { emit failed("已取消"); return; }
+        if (m_cancelled) {
+            finishCancelled(allFindings, stats,
+                            QString("第 %1/%2 块检测前").arg(i + 1).arg(total));
+            return;
+        }
 
         emit progressChanged(10 + 75 * i / total, 100,
                              QString("LLM 检测中 %1/%2").arg(i + 1).arg(total));
@@ -92,10 +102,18 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
         int attempt = 0;
 
         for (; attempt < kMaxAttemptsPerChunk; ++attempt) {
-            if (m_cancelled) { emit failed("已取消"); return; }
+            if (m_cancelled) {
+                finishCancelled(allFindings, stats,
+                                QString("第 %1/%2 块检测中").arg(i + 1).arg(total));
+                return;
+            }
 
             if (!m_http->chat(systemPrompt, userPrompt, &raw, &chatErr, 512)) {
-                if (m_cancelled) { emit failed("已取消"); return; }
+                if (m_cancelled) {
+                    finishCancelled(allFindings, stats,
+                                    QString("第 %1/%2 块请求被中止").arg(i + 1).arg(total));
+                    return;
+                }
                 emit failed(QString("LLM 请求失败（第 %1/%2 块）：%3。"
                                     "推理服务可能已崩溃，请查看服务日志后重试")
                             .arg(i + 1).arg(total).arg(chatErr));
@@ -134,22 +152,32 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
     // ---- 阶段 4：汇总报告 ----
     emit progressChanged(90, 100, "生成总体报告");
     QString report;
+    bool summaryOk = false;
     {
         m_http->setJsonMode(false);   // 汇总输出 Markdown 自由文本，不要 JSON 语法约束
         QString raw, chatErr;
-        const bool ok = m_http->chat(
+        summaryOk = m_http->chat(
             PromptBuilder::summarySystemPrompt(),
             PromptBuilder::summaryPrompt(allFindings, stats, stats.totalLines,
                                          chunks.size(), allChunks.size(),
                                          sampled, chunksUnparsable),
             &raw, &chatErr, 1024);
         m_http->setJsonMode(true);
-        if (ok && !raw.trimmed().isEmpty())
+        if (summaryOk && !raw.trimmed().isEmpty())
             report = raw;
         else
             report = PromptBuilder::ruleFallbackReport(stats, stats.totalLines, chatErr);
     }
-    if (m_cancelled) { emit failed("已取消"); return; }
+    if (m_cancelled) {
+        if (summaryOk) {
+            // 汇总已完成才收到取消：报告是完整的，直接交付（不丢 LLM 成果）
+            emit finished(allFindings, report);
+            emit progressChanged(100, 100, "已取消（报告完整）");
+        } else {
+            finishCancelled(allFindings, stats, "汇总报告生成中");
+        }
+        return;
+    }
 
     emit progressChanged(100, 100, "完成");
     emit finished(allFindings, report);
@@ -161,4 +189,15 @@ void AnalysisWorker::cancel()
     // 若正阻塞在 chat() 里：abort 让它立刻返回（错误为"已取消"）
     if (m_http)
         m_http->abortCurrent();
+}
+
+void AnalysisWorker::finishCancelled(const QVector<AnomalyFinding> &findings,
+                                     const LogParser::Stats &stats, const QString &stage)
+{
+    // 用户取消：不丢已检出的结果，用取消报告（结果清单 + 规则统计）走 finished。
+    // 注意 progressChanged 放在 finished 之后发出：两个信号按序进 UI 队列，
+    // onFinished 先执行（切报告页、解锁按钮），onProgress 再把状态栏定格为"已取消"。
+    emit finished(findings,
+                  PromptBuilder::cancelledReport(findings, stats, stats.totalLines, stage));
+    emit progressChanged(100, 100, "已取消（部分结果）");
 }

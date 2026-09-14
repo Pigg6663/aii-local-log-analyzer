@@ -385,33 +385,52 @@ void MainWindow::onFindingJumped(int row, int /*column*/)
     if (!item)
         return;
     const int start = item->data(Qt::UserRole).toInt();
+    const int end   = item->data(Qt::UserRole + 1).toInt();
     if (start <= 0) {
         statusBar()->showMessage("该结果没有可跳转的行号", 3000);
         return;
     }
-    jumpToLine(start);
+    jumpToLine(start, end);
 }
 
-void MainWindow::jumpToLine(int lineNumber)
+void MainWindow::jumpToLine(int startLine, int endLine)
 {
     QTextDocument *doc = m_logView->document();
-    if (lineNumber < 1 || lineNumber > doc->blockCount()) {
+    const int blockCount = doc->blockCount();
+
+    // 行号归一：end 无效或倒置时按单行处理（ResultParser 已做交换，这里是防御）
+    if (endLine < startLine)
+        endLine = startLine;
+
+    if (startLine < 1 || startLine > blockCount) {
         statusBar()->showMessage(
             QString("第 %1 行超出显示范围（当前仅显示前 %2 行）")
-                .arg(lineNumber).arg(doc->blockCount()), 5000);
+                .arg(startLine).arg(blockCount), 5000);
         return;
     }
+    if (endLine > blockCount) {
+        // 日志视图有 2MB 显示上限，范围可能被截断：高亮到可见部分为止
+        statusBar()->showMessage(
+            QString("第 %1-%2 行超出显示范围，仅高亮到第 %3 行")
+                .arg(startLine).arg(endLine).arg(blockCount), 5000);
+        endLine = blockCount;
+    }
 
-    QTextCursor cursor(doc->findBlockByNumber(lineNumber - 1));
+    // 光标定到范围首行并滚动过去
+    QTextCursor cursor(doc->findBlockByNumber(startLine - 1));
     m_logView->setTextCursor(cursor);
     m_logView->centerCursor();
 
-    // 整行高亮（FullWidthSelection + 单条 ExtraSelection，下一次跳转自动替换）
+    // 整段高亮：选区从首行开头拉到末行行尾（FullWidthSelection 让每一行都整行着色，
+    // 单条 ExtraSelection，下一次跳转自动替换）
+    QTextCursor rangeCursor(doc->findBlockByNumber(startLine - 1));
+    rangeCursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor, endLine - startLine);
+    rangeCursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+
     QTextEdit::ExtraSelection sel;
     sel.format.setBackground(QColor(255, 235, 156));
     sel.format.setProperty(QTextFormat::FullWidthSelection, true);
-    sel.cursor = cursor;
-    sel.cursor.clearSelection();
+    sel.cursor = rangeCursor;
     m_logView->setExtraSelections(QList<QTextEdit::ExtraSelection>() << sel);
 }
 

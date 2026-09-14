@@ -61,7 +61,7 @@ private:
     void buildMenus();
     void beginAnalysis();                   // 服务就绪后真正启动分析（emit analyzeRequested）
     void loadLogForDisplay(const QString &path);  // 只读显示，上限 2MB（分析用完整文件）
-    void jumpToLine(int lineNumber);        // 日志视图跳转 + 整行高亮
+    void jumpToLine(int startLine, int endLine);  // 日志视图跳转 + 起止行整段高亮
 
     Ui::MainWindow *ui;
 

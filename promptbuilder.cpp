@@ -23,6 +23,36 @@ QString topKeywords(const LogParser::Stats &stats)
     return kws.isEmpty() ? QString("无") : kws.join("、");
 }
 
+// 检测结果清单（按严重度排序，最多 40 条），汇总提示与取消报告共用
+void appendFindingsList(QString &s, const QVector<AnomalyFinding> &findings)
+{
+    QVector<AnomalyFinding> listed = findings;
+    const auto sevRank = [](const QString &sev) {
+        if (sev == "critical") return 4;
+        if (sev == "high") return 3;
+        if (sev == "medium") return 2;
+        return 1;
+    };
+    std::sort(listed.begin(), listed.end(),
+              [&](const AnomalyFinding &a, const AnomalyFinding &b) {
+                  return sevRank(a.severity) > sevRank(b.severity);
+              });
+    int shown = 0;
+    for (const AnomalyFinding &f : listed) {
+        if (shown >= 40) {
+            s += QStringLiteral("…（其余 %1 条已省略）\n").arg(listed.size() - shown);
+            break;
+        }
+        s += QString("- [%1] 第 %2-%3 行：%4（%5）\n")
+                 .arg(f.severity)
+                 .arg(f.startLine > 0 ? QString::number(f.startLine) : QStringLiteral("?"))
+                 .arg(f.endLine > 0 ? QString::number(f.endLine) : QStringLiteral("?"))
+                 .arg(f.summary)
+                 .arg(f.details);
+        ++shown;
+    }
+}
+
 } // namespace
 
 QString PromptBuilder::systemPrompt()
@@ -112,32 +142,7 @@ QString PromptBuilder::summaryPrompt(const QVector<AnomalyFinding> &findings,
     if (findings.isEmpty()) {
         s += QStringLiteral("（无）\n");
     } else {
-        // 条数太多时按严重度排序只给前 40 条，防止汇总提示词超预算
-        QVector<AnomalyFinding> listed = findings;
-        const auto sevRank = [](const QString &sev) {
-            if (sev == "critical") return 4;
-            if (sev == "high") return 3;
-            if (sev == "medium") return 2;
-            return 1;
-        };
-        std::sort(listed.begin(), listed.end(),
-                  [&](const AnomalyFinding &a, const AnomalyFinding &b) {
-                      return sevRank(a.severity) > sevRank(b.severity);
-                  });
-        int shown = 0;
-        for (const AnomalyFinding &f : listed) {
-            if (shown >= 40) {
-                s += QStringLiteral("…（其余 %1 条已省略）\n").arg(listed.size() - shown);
-                break;
-            }
-            s += QString("- [%1] 第 %2-%3 行：%4（%5）\n")
-                     .arg(f.severity)
-                     .arg(f.startLine > 0 ? QString::number(f.startLine) : QStringLiteral("?"))
-                     .arg(f.endLine > 0 ? QString::number(f.endLine) : QStringLiteral("?"))
-                     .arg(f.summary)
-                     .arg(f.details);
-            ++shown;
-        }
+        appendFindingsList(s, findings);
     }
 
     s += QStringLiteral(
@@ -163,5 +168,31 @@ QString PromptBuilder::ruleFallbackReport(const LogParser::Stats &stats, int tot
     s += QString("- 未识别级别：%1 行\n").arg(stats.unknowns);
     s += QString("- 高频错误关键词：%1\n").arg(topKeywords(stats));
     s += QStringLiteral("\n建议：优先排查 ERROR/FATAL 集中的时间段与高频错误关键词相关代码路径。");
+    return s;
+}
+
+QString PromptBuilder::cancelledReport(const QVector<AnomalyFinding> &findings,
+                                       const LogParser::Stats &stats, int totalLines,
+                                       const QString &cancelStage)
+{
+    QString s;
+    s += QStringLiteral("## 分析已取消（部分结果）\n\n");
+    s += QString("- 取消位置：%1\n").arg(cancelStage);
+    s += QString("- 日志总行数：%1\n").arg(totalLines);
+
+    s += QStringLiteral("\n## 已检出异常（共 %1 条）\n").arg(findings.size());
+    if (findings.isEmpty()) {
+        s += QStringLiteral("（无）\n");
+    } else {
+        appendFindingsList(s, findings);
+    }
+
+    s += QStringLiteral("\n## 规则统计\n\n");
+    s += QString("- ERROR/FATAL：%1 行\n").arg(stats.errors);
+    s += QString("- WARN：%1 行\n").arg(stats.warnings);
+    s += QString("- INFO/DEBUG/TRACE：%1 行\n").arg(stats.infos);
+    s += QString("- 未识别级别：%1 行\n").arg(stats.unknowns);
+    s += QString("- 高频错误关键词：%1\n").arg(topKeywords(stats));
+    s += QStringLiteral("\n如需完整分析，请重新点击“开始分析”。");
     return s;
 }

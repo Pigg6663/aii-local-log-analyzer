@@ -33,6 +33,11 @@ public:
     // LLM 汇总失败时的纯规则兜底报告（保证永远有产出）
     static QString ruleFallbackReport(const LogParser::Stats &stats, int totalLines,
                                       const QString &llmError);
+
+    // 用户取消分析时的报告：取消位置 + 已检出结果清单 + 规则统计（导出也自包含）
+    static QString cancelledReport(const QVector<AnomalyFinding> &findings,
+                                   const LogParser::Stats &stats, int totalLines,
+                                   const QString &cancelStage);
 };
 
 #endif // PROMPTBUILDER_H
