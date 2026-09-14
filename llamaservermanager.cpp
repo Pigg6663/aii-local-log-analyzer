@@ -1,6 +1,5 @@
 #include "llamaservermanager.h"
 
-#include <QAbstractSocket>
 #include <QFileInfo>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -18,7 +17,6 @@ LlamaServerManager::LlamaServerManager(QObject *parent)
     , m_healthTimer(new QTimer(this))
     , m_healthElapsed(0)
     , m_probeSocket(new QTcpSocket(this))
-    , m_probeTimer(new QTimer(this))
     , m_probeHealthReply(nullptr)
     , m_probeHealthTimer(new QTimer(this))
     , m_restartRequested(false)
@@ -32,16 +30,6 @@ LlamaServerManager::LlamaServerManager(QObject *parent)
 
     m_healthTimer->setInterval(500);
     connect(m_healthTimer, &QTimer::timeout, this, &LlamaServerManager::onHealthCheck);
-
-    // 端口预检：连接超时 2s（本地端口拒绝会立即返回，超时基本=被别的程序占用）
-    m_probeTimer->setSingleShot(true);
-    m_probeTimer->setInterval(2000);
-    connect(m_probeTimer, &QTimer::timeout, this, &LlamaServerManager::onProbeTimeout);
-
-    connect(m_probeSocket, &QTcpSocket::connected, this, &LlamaServerManager::onProbeConnected);
-    // Qt 5.14 的信号名是 error()（errorOccurred 是 5.15 才改的名），QOverload 消除与 error() 取值函数的歧义
-    connect(m_probeSocket, QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::error),
-            this, &LlamaServerManager::onProbeError);
 
     // 复用确认：对方 /health 的回复超时 3s
     m_probeHealthTimer->setSingleShot(true);
@@ -88,52 +76,36 @@ void LlamaServerManager::start()
     //   被其他程序占用 → 明确报错，引导用户改端口；
     //   空闲 → 正常拉起自己的进程。
     // 探测放在二进制/模型检查之前：复用外部服务时根本用不到这两个路径。
+    //
+    // 为什么用同步 waitForConnected：异步 error 信号在本机不可靠——实测空闲端口
+    // 的 ConnectionRefusedError 约 4 秒才送达（Qt 引擎延迟），短超时 + 定时器兜底
+    // 会把空闲端口误判成"被占"。waitForConnected 直接等待连接结果，语义确定：
+    //   连接成功（本机 loopback 实测 <100ms）→ 端口被占 → /health 复用确认；
+    //   超时/出错（最多阻塞 UI 线程 500ms）→ 端口空闲 → 拉起自己的进程。
     setState(State::Starting, QString("正在检测端口 %1…").arg(m_port));
-    m_probeSocket->abort();   // 清上次探测残留（此时 m_probing 仍为 false，信号被忽略）
-    m_probing = true;
+    m_probeSocket->abort();   // 清上次探测残留
     m_probeSocket->connectToHost("127.0.0.1", m_port);
-    m_probeTimer->start();
+
+    if (m_probeSocket->waitForConnected(500)) {
+        if (m_state != State::Starting)
+            return;   // 等待期间被 stop() 取消（waitForConnected 内部会跑事件循环）
+        m_probeSocket->abort();   // 断开探测连接
+        beginReuseCheck();
+    } else {
+        if (m_state != State::Starting)
+            return;
+        beginProcessLaunch();
+    }
 }
 
-void LlamaServerManager::onProbeConnected()
+void LlamaServerManager::beginReuseCheck()
 {
-    m_probing = false;
-    m_probeTimer->stop();
-    m_probeSocket->abort();   // 断开探测连接（m_probing 已置 false，其后信号被忽略）
-
-    // 端口被占：确认对方是不是健康的 llama-server，是则直接复用
     setState(State::Starting, QString("端口 %1 已被占用，正在确认是否可复用…").arg(m_port));
     QNetworkRequest req(QUrl(apiBaseUrl() + "/health"));
     m_probeHealthReply = m_nam->get(req);
     connect(m_probeHealthReply, &QNetworkReply::finished,
             this, &LlamaServerManager::onProbeHealthFinished);
     m_probeHealthTimer->start();
-}
-
-void LlamaServerManager::onProbeError(QAbstractSocket::SocketError error)
-{
-    if (!m_probing)
-        return;   // 主动 abort 或已进入复用确认阶段
-    m_probing = false;
-    m_probeTimer->stop();
-
-    if (error == QAbstractSocket::ConnectionRefusedError) {
-        beginProcessLaunch();   // 端口空闲 → 正常拉起自己的 llama-server
-        return;
-    }
-    // 其他错误：按"被占且不可用"处理
-    setState(State::Failed, "端口探测失败");
-    emit serverFailed(QString("端口 %1 不可用（%2）。请在【设置 → 设置…】中修改端口后重试")
-                      .arg(m_port).arg(m_probeSocket->errorString()));
-}
-
-void LlamaServerManager::onProbeTimeout()
-{
-    if (!m_probing)
-        return;
-    m_probing = false;
-    m_probeSocket->abort();
-    failPortOccupied();
 }
 
 void LlamaServerManager::onProbeHealthFinished()
@@ -214,9 +186,8 @@ void LlamaServerManager::beginProcessLaunch()
 
 void LlamaServerManager::cancelProbe()
 {
-    m_probing = false;
-    m_probeTimer->stop();
-    m_probeSocket->abort();
+    // 复用确认阶段被停：取消在途 /health 请求。
+    // （同步探测阶段被停由 start() 里 waitForConnected 之后的状态守卫处理）
     if (m_probeHealthReply) {
         QNetworkReply *reply = m_probeHealthReply;
         m_probeHealthReply = nullptr;

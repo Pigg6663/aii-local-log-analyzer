@@ -64,17 +64,15 @@ private slots:
     void onProcessError(QProcess::ProcessError error);
     void onProcessFinished(int exitCode, QProcess::ExitStatus status);
     void onStderrReady();
-    // 端口预检（W5）：启动前探测端口，被健康服务占用则直接复用
-    void onProbeConnected();
-    void onProbeError(QAbstractSocket::SocketError error);
-    void onProbeTimeout();
+    // 端口预检（W5）：同步探测（waitForConnected），空闲则拉起，被占则走 /health 复用确认
     void onProbeHealthFinished();
     void onProbeHealthTimeout();
 
 private:
     void setState(State s, const QString &desc);
     void beginProcessLaunch();   // 端口空闲：二进制/模型检查 + QProcess 拉起
-    void cancelProbe();          // 取消在途探测（stop() 在探测阶段也会调用）
+    void beginReuseCheck();      // 端口被占：GET /health 确认对方是否可复用的 llama-server
+    void cancelProbe();          // 取消在途的复用确认请求（stop() 在探测阶段也会调用）
     void failPortOccupied();     // 复用确认失败：统一报"端口被占"错误
 
     QProcess *m_proc;
@@ -84,9 +82,7 @@ private:
     int m_healthElapsed;            // 已等待毫秒数
 
     // 端口预检（W5）
-    QTcpSocket *m_probeSocket;          // 探测目标端口（连接成功 = 被占）
-    QTimer *m_probeTimer;               // 探测连接超时（2s）
-    bool m_probing = false;             // 探测在途标志（区分真实失败与主动 abort）
+    QTcpSocket *m_probeSocket;          // 探测目标端口（waitForConnected 同步探测，连接成功 = 被占）
     QNetworkReply *m_probeHealthReply;  // 复用确认的 /health 请求（同一时刻只有一个）
     QTimer *m_probeHealthTimer;         // 复用确认超时（3s）
     bool m_ownsProcess = false;         // true=本程序拉起的进程（stop 才终止）；false=复用外部服务
