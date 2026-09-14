@@ -1,0 +1,26 @@
+# ---- 构建产物 ----
+build*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.exe
+*.dll
+*.a
+*.lib
+*.pdb
+
+# ---- Qt Creator / IDE ----
+CMakeLists.txt.user
+*.user
+.qmake.stash
+.vscode/
+
+# ---- 模型与大数据（不入库）----
+*.gguf
+*.bin
+
+# ---- 其他 ----
+*.log
