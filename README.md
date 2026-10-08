@@ -96,14 +96,6 @@ cmake --build build
 1. 启动 `aii`，菜单 **设置 → 设置…**，填入 `llama-server.exe` 路径与 GGUF 模型路径（其余用默认值即可）
 2. 拖入一个日志文件，点 **开始分析**——程序会自动拉起 llama-server，模型加载就绪后自动开始分析（CPU 推理，加载与逐块检测需要耐心）
 
-## 运行截图
-
-| 场景 | 截图 |
-|---|---|
-| 主界面（拖入日志后） | ![主界面](docs/screenshots/main-window.png)　*（占位：待补充截图）* |
-| 检测结果与报告 | ![分析结果](docs/screenshots/analysis-result.png)　*（占位：待补充截图）* |
-| 设置页 | ![设置页](docs/screenshots/settings.png)　*（占位：待补充截图）* |
-
 ## 已知限制
 
 - **平台/工具链**：仅在 Windows + MinGW 7.3.0 验证；受工具链限制无法直接编译现代 llama.cpp，依赖预编译 `llama-server.exe`
