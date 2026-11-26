@@ -426,6 +426,10 @@ void MainWindow::jumpToLine(int startLine, int endLine)
     QTextCursor rangeCursor(doc->findBlockByNumber(startLine - 1));
     rangeCursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor, endLine - startLine);
     rangeCursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    // 再把末行的换行符也吞进来：否则最后一行拿到的是"行尾字符"而不是"行尾换行"，
+    // FullWidthSelection 只会画到文字末尾，导致中间行整行着色、末行只着色到文字宽度。
+    if (doc->findBlockByNumber(endLine).isValid())
+        rangeCursor.movePosition(QTextCursor::NextCharacter, QTextCursor::KeepAnchor);
 
     QTextEdit::ExtraSelection sel;
     sel.format.setBackground(QColor(255, 235, 156));
