@@ -35,6 +35,7 @@ signals:
 
 private:
     bool m_cancelled = false;          // 只在 worker 线程内读写，无竞态
+    bool m_streamMuted = false;        // 前缀预热期间屏蔽流式输出，避免污染界面
     LlamaHttpClient *m_http = nullptr; // 惰性创建于 worker 线程（QNAM 线程亲和要求）
 
     // 取消收尾：保留已检出结果 + 规则兜底报告，走 finished 流程

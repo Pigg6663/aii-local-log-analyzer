@@ -35,8 +35,12 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
 
         // 流式增量：tokenReceived 在 chat() 内部、worker 线程里同步发出；
         // 这里只做转发，跨线程的排队由 UI 侧的 queued 连接负责。
+        // m_streamMuted 用来屏蔽前缀预热请求的输出——它不是分析结果，不该出现在界面上。
         connect(m_http, &LlamaHttpClient::tokenReceived, this,
-                [this](const QString &delta) { emit tokenStreamed(delta); });
+                [this](const QString &delta) {
+                    if (!m_streamMuted)
+                        emit tokenStreamed(delta);
+                });
     }
     m_http->setBaseUrl(serverBaseUrl);
     m_http->setJsonMode(true);          // 检测阶段要求 JSON 输出
@@ -109,6 +113,23 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
         QString userPrompt = PromptBuilder::chunkDetectionPrompt(chunk);
         QString raw, chatErr;
         int attempt = 0;
+
+        // 前缀预热：llama-server 对"这段提示词第一次出现"和"命中前缀缓存"走两条不同的
+        // 计算路径，同一块日志会因此给出结构完全不同的结果（实测首次 11 条、之后稳定 5 条，
+        // 贪心解码和固定种子都压不住）。先发一个只解码 1 个 token 的请求，把这段提示词算进
+        // KV 缓存，正式请求就会命中缓存；prompt 求值本来也要做一次，所以几乎不额外耗时。
+        if (!m_cancelled) {
+            m_streamMuted = true;
+            QString warmReply, warmError;
+            const bool warmOk = m_http->chat(systemPrompt, userPrompt,
+                                             &warmReply, &warmError, 1);
+            m_streamMuted = false;
+            if (!warmOk) {
+                emit progressChanged(10 + 75 * i / total, 100,
+                                     QString("第 %1/%2 块预热失败，继续检测（%3）")
+                                         .arg(i + 1).arg(total).arg(warmError));
+            }
+        }
 
         for (; attempt < kMaxAttemptsPerChunk; ++attempt) {
             if (m_cancelled) {
