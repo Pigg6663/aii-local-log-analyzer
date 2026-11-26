@@ -191,7 +191,7 @@ aii/
 │   ├── DESIGN.md             # 设计文档：类职责/数据流/线程模型/进程生命周期
 │   └── screenshots/          # README 用的界面截图
 ├── tests/
-│   └── unit_tests.cpp        # 单元测试：LogParser / LogChunker / ResultParser（75 项断言）
+│   └── unit_tests.cpp        # 单元测试：LogParser / LogChunker / ResultParser（76 项断言）
 ├── main.cpp                  # qRegisterMetaType + QSettings 归属
 ├── mainwindow.{h,cpp,ui}     # UI：拖放、结果列表、报告页、设置、导出、服务门控
 ├── analysisworker.{h,cpp}    # 管线编排（Worker 线程）：解析→分块→逐块检测→汇总
@@ -214,7 +214,7 @@ aii/
 | 代码行数 | 约 2,600 行（非空约 2,200 行） |
 | 功能模块 | 9 个：UI / 管线编排 / 服务管理 / HTTP 客户端 / 日志解析 / 分块 / 提示词构建 / 结果解析 / 设置 |
 | 第三方依赖 | 无，只依赖 Qt 5.14（Widgets + Network）与标准库 |
-| 验证方式 | `unit_tests` 75 项断言（CTest 一键跑）+ `server_test` 控制台闭环（不依赖 GUI）+ [`samples/demo.log`](samples/demo.log) 手动回归 |
+| 验证方式 | `unit_tests` 76 项断言（CTest 一键跑）+ `server_test` 控制台闭环（不依赖 GUI）+ [`samples/demo.log`](samples/demo.log) 手动回归 |
 
 ## 构建与运行
 
@@ -255,7 +255,7 @@ cmake --build build --target unit_tests
 ctest --test-dir build --output-on-failure
 ```
 
-75 项断言，覆盖三个纯函数模块：
+76 项断言，覆盖三个纯函数模块：
 
 | 模块 | 覆盖点 |
 |---|---|
