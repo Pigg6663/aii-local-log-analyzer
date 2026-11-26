@@ -27,6 +27,9 @@ public slots:
 signals:
     void progressChanged(int current, int total, const QString &stage);
     void findingFound(const AnomalyFinding &finding);
+    // 模型流式增量（每个 SSE delta 一次）。跨线程交给 UI 后必须合并刷新，
+    // 否则一秒几百次的 append 会把界面拖卡。
+    void tokenStreamed(const QString &delta);
     void finished(const QVector<AnomalyFinding> &findings, const QString &report);
     void failed(const QString &reason);
 

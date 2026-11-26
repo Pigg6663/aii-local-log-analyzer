@@ -32,6 +32,11 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
     if (!m_http) {
         m_http = new LlamaHttpClient(this);
         m_http->setTimeoutMs(180000);   // CPU 推理慢，单块最多等 3 分钟
+
+        // 流式增量：tokenReceived 在 chat() 内部、worker 线程里同步发出；
+        // 这里只做转发，跨线程的排队由 UI 侧的 queued 连接负责。
+        connect(m_http, &LlamaHttpClient::tokenReceived, this,
+                [this](const QString &delta) { emit tokenStreamed(delta); });
     }
     m_http->setBaseUrl(serverBaseUrl);
     m_http->setJsonMode(true);          // 检测阶段要求 JSON 输出
@@ -96,6 +101,10 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
                              QString("LLM 检测中 %1/%2").arg(i + 1).arg(total));
 
         const LogChunk &chunk = chunks.at(i);
+        // 块分隔线：让界面能看出"这段输出属于第几块"，重试时也能看到同一块多次输出
+        emit tokenStreamed(QString("\n──── 检测块 %1/%2（第 %3-%4 行）────\n")
+                               .arg(i + 1).arg(total)
+                               .arg(chunk.startLine).arg(chunk.endLine));
         QVector<AnomalyFinding> findings;
         QString userPrompt = PromptBuilder::chunkDetectionPrompt(chunk);
         QString raw, chatErr;
@@ -153,6 +162,7 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
 
     // ---- 阶段 4：汇总报告 ----
     emit progressChanged(90, 100, "生成总体报告");
+    emit tokenStreamed("\n──── 汇总报告 ────\n");
     QString report;
     bool summaryOk = false;
     {

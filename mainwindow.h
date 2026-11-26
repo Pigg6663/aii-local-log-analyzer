@@ -16,6 +16,7 @@ class QTabWidget;
 class QTableWidget;
 class QTextBrowser;
 class QThread;
+class QTimer;
 
 class AnalysisWorker;
 
@@ -52,6 +53,8 @@ private slots:
     void onFindingJumped(int row, int column);
     void onProgress(int current, int total, const QString &stage);   // Worker → UI（queued）
     void onFindingFound(const AnomalyFinding &finding);              // Worker → UI（queued）
+    void onTokenStreamed(const QString &delta);                      // Worker → UI（queued）
+    void onStreamFlushTimeout();                                     // 合并刷新（见 .cpp 注释）
     void onFinished(const QVector<AnomalyFinding> &findings, const QString &report);
     void onFailed(const QString &reason);
 
@@ -75,6 +78,12 @@ private:
     QTableWidget *m_findingsTable;     // 检测结果列表
     QTextBrowser *m_reportView;        // 分析报告（Markdown 渲染）
     QPlainTextEdit *m_runLog;          // 运行日志（状态消息、服务/解析错误）
+    QPlainTextEdit *m_streamView;      // 模型输出（流式增量，实时滚动）
+
+    // 流式合并刷新：模型每秒可吐几十个 delta，逐个 insertPlainText 会把 UI 拖卡。
+    // 这里先攒进 m_streamBuffer，由 50ms 的单次定时器一次性刷入。
+    QString m_streamBuffer;
+    QTimer *m_streamFlushTimer;
 
     QLabel *m_progressLabel;           // 状态栏左侧：分析进度
     QLabel *m_serverStatusLabel;       // 状态栏右侧永久区：服务状态

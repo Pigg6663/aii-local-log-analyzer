@@ -30,6 +30,7 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTimer>
 #include <QTextEdit>
 #include <QThread>
 #include <QToolBar>
@@ -84,6 +85,7 @@ MainWindow::MainWindow(QWidget *parent)
     // Worker → UI（跨线程，自动变 Queued）
     connect(m_worker, &AnalysisWorker::progressChanged, this, &MainWindow::onProgress);
     connect(m_worker, &AnalysisWorker::findingFound,    this, &MainWindow::onFindingFound);
+    connect(m_worker, &AnalysisWorker::tokenStreamed,   this, &MainWindow::onTokenStreamed);
     connect(m_worker, &AnalysisWorker::finished,        this, &MainWindow::onFinished);
     connect(m_worker, &AnalysisWorker::failed,          this, &MainWindow::onFailed);
     // 退出清理：线程事件循环结束后，在 worker 线程内安全删除 worker 对象
@@ -146,6 +148,20 @@ void MainWindow::buildUi()
     m_runLog = new QPlainTextEdit(m_tabs);
     m_runLog->setReadOnly(true);
     m_tabs->addTab(m_runLog, "运行日志");
+
+    // 模型输出：流式增量在这里实时滚动，让"模型正在想"可见（否则整段分析期间界面是黑的）
+    m_streamView = new QPlainTextEdit(m_tabs);
+    m_streamView->setReadOnly(true);
+    m_streamView->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_streamView->setStyleSheet(
+        "font-family: Consolas, 'Courier New', monospace; font-size: 12px;");
+    m_tabs->addTab(m_streamView, "模型输出");
+
+    // 合并刷新定时器：单次触发，有数据进来才启动（不空转）
+    m_streamFlushTimer = new QTimer(this);
+    m_streamFlushTimer->setSingleShot(true);
+    m_streamFlushTimer->setInterval(50);
+    connect(m_streamFlushTimer, &QTimer::timeout, this, &MainWindow::onStreamFlushTimeout);
 
     auto *splitter = new QSplitter(Qt::Vertical, central);
     splitter->addWidget(m_logView);
@@ -288,6 +304,10 @@ void MainWindow::beginAnalysis()
     m_exportAction->setEnabled(false);
     m_logView->setExtraSelections(QList<QTextEdit::ExtraSelection>());
     m_runLog->appendPlainText("== 开始分析（真实管线）==\n");
+    // 模型输出页只在本次分析内有效：清空上一次的残留，并把焦点留在检测结果页
+    m_streamView->clear();
+    m_streamBuffer.clear();
+    m_streamFlushTimer->stop();
     m_analyzeAction->setEnabled(false);
     m_cancelAction->setEnabled(true);
     m_dropLabel->setText(QString("当前文件：%1\n（分析中…）").arg(m_currentFile));
@@ -470,6 +490,26 @@ void MainWindow::onProgress(int current, int total, const QString &stage)
     m_progressLabel->setText(QString("%1  %2/%3").arg(stage).arg(current).arg(total));
 }
 
+// 流式增量到达（UI 线程）：只入缓冲，由定时器合并刷入控件。
+// 直接 insertPlainText 的话，模型一秒几十上百个 delta 会触发同等次数的
+// 布局重算 + 滚动条更新，界面会明显发卡。
+void MainWindow::onTokenStreamed(const QString &delta)
+{
+    m_streamBuffer += delta;
+    if (!m_streamFlushTimer->isActive())
+        m_streamFlushTimer->start();     // 50ms 后统一刷一次
+}
+
+void MainWindow::onStreamFlushTimeout()
+{
+    if (m_streamBuffer.isEmpty())
+        return;
+    m_streamView->moveCursor(QTextCursor::End);
+    m_streamView->insertPlainText(m_streamBuffer);
+    m_streamView->ensureCursorVisible();   // 跟随最新输出滚动
+    m_streamBuffer.clear();
+}
+
 void MainWindow::onFindingFound(const AnomalyFinding &finding)
 {
     // ★ 线程边界验证点：这行打印应显示【主线程】指针，
@@ -511,6 +551,7 @@ void MainWindow::onFindingFound(const AnomalyFinding &finding)
 void MainWindow::onFinished(const QVector<AnomalyFinding> &findings, const QString &report)
 {
     m_running = false;
+    onStreamFlushTimeout();                  // 收尾：把缓冲里最后一段输出落屏
     m_analyzeAction->setEnabled(!m_currentFile.isEmpty());
     m_cancelAction->setEnabled(false);
     m_progressLabel->setText("分析完成");
@@ -527,6 +568,7 @@ void MainWindow::onFinished(const QVector<AnomalyFinding> &findings, const QStri
 void MainWindow::onFailed(const QString &reason)
 {
     m_running = false;
+    onStreamFlushTimeout();                  // 收尾：失败前已输出的部分也要留下
     m_analyzeAction->setEnabled(!m_currentFile.isEmpty());
     m_cancelAction->setEnabled(false);
     m_progressLabel->setText("失败 / 取消");
