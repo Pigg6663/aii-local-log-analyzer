@@ -50,6 +50,12 @@ bool LlamaHttpClient::chat(const QString &systemPrompt, const QString &userPromp
     if (m_jsonMode)
         body.insert("response_format", QJsonObject{ {"type", "json_object"} });
 
+    // 关闭模型的"思考"模式。Qwen3 一类模型默认先输出 reasoning_content（整段思维链），
+    // 会把 max_tokens 预算吃光，正文 JSON 只写了个开头就被截断，导致解析必然失败
+    // （实测 512 token 全部被思维链占用，content 只剩 121 字符）。
+    // 该参数经 chat template 生效；模板里没有这个变量的模型会直接忽略，无副作用。
+    body.insert("chat_template_kwargs", QJsonObject{ {"enable_thinking", false} });
+
     QNetworkRequest req(QUrl(m_baseUrl + "/v1/chat/completions"));
     req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 

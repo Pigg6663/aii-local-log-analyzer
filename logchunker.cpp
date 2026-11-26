@@ -2,8 +2,8 @@
 
 namespace {
 
-// 预留 token：提示词模板 + 输出上限（max_tokens 512 ≈ 1024 token 余量）
-constexpr int kReservedTokens = 1024;
+// 预留 token：提示词模板 + 输出上限（检测阶段 max_tokens 1536，取 2048 余量）
+constexpr int kReservedTokens = 2048;
 
 // 每行的显示格式：行号|内容
 QString lineText(const LogEntry &e)

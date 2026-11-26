@@ -108,7 +108,9 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
                 return;
             }
 
-            if (!m_http->chat(systemPrompt, userPrompt, &raw, &chatErr, 512)) {
+            // 1536 而非 512：一段 50 行日志通常能查出 5~8 条异常，每条含 summary+details，
+            // 512 token 会在数组中途被截断（实测 6 条结果需约 820 token）。
+            if (!m_http->chat(systemPrompt, userPrompt, &raw, &chatErr, 1536)) {
                 if (m_cancelled) {
                     finishCancelled(allFindings, stats,
                                     QString("第 %1/%2 块请求被中止").arg(i + 1).arg(total));
@@ -161,7 +163,7 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
             PromptBuilder::summaryPrompt(allFindings, stats, stats.totalLines,
                                          chunks.size(), allChunks.size(),
                                          sampled, chunksUnparsable),
-            &raw, &chatErr, 1024);
+            &raw, &chatErr, 2048);
         m_http->setJsonMode(true);
         if (summaryOk && !raw.trimmed().isEmpty())
             report = raw;

@@ -17,26 +17,28 @@
 **输入节选**
 
 ```
+15  2026-03-15 10:06:02.441 [WARN ] [db-pool] pool usage 94% active=47 idle=3 waiting=2
 16  2026-03-15 10:06:44.902 [ERROR] [db-pool] connection pool exhausted active=50 waiting=17 maxWait=3000ms
-26  2026-03-15 10:07:01.556 [ERROR] [db] deadlock found when trying to get lock; try restarting transaction
-31  2026-03-15 10:07:41.884 [ERROR] [disk] write failed ... errno=28 No space left on device
+24  2026-03-15 10:06:52.774 [WARN ] [db] long running transaction detected id=tx-88214 duration=91s
+31  2026-03-15 10:07:41.884 [ERROR] [disk] write failed path=/var/app/upload/tmp/9f3a2c errno=28 No space left on device
 37  2026-03-15 10:07:57.229 [ERROR] [auth] account locked after 5 failed attempts user=1042 ip=10.22.8.31
-39  2026-03-15 10:08:14.902 [ERROR] [order] null pointer dereference in OrderService.calculateTotal
+39  2026-03-15 10:08:14.902 [ERROR] [order] null pointer dereference in OrderService.calculateTotal tenant=null orderId=88231
 ```
 
-**输出（检测结果列表）**
+**输出（检测结果列表，Qwen3-1.7B Q4_K_M 本地实测）**
 
-| 行号 | 严重度 | 类型 | 说明 |
-|---|---|---|---|
-| 16 | 🔴 高 | 资源耗尽 | 数据库连接池打满（50/50，排队 17），已导致后续订单接口连续 500 |
-| 26 | 🟡 中 | 并发冲突 | 行锁死锁，与 24-25 行的长事务（91s/88s）时间吻合 |
-| 31 | 🔴 高 | 磁盘故障 | `errno=28 No space left on device`，分片上传中断 |
-| 37 | 🟡 中 | 安全 | 同一 IP 连续 5 次登录失败后锁定账户，疑似撞库 |
-| 39 | 🔴 高 | 空指针 | `OrderService.calculateTotal` 空指针，栈显示由 `/api/orders` 触发 |
+| 起止行 | 严重度 | 摘要（模型原话） |
+|---|---|---|
+| 15-17 | 🔴 高 | 数据库连接池使用率高，可能导致性能问题 |
+| 16-18 | 🔴 高 | 数据库连接池耗尽，导致 HTTP 请求超时并抛出异常 |
+| 24-25 | 🔴 高 | 长时间运行的事务检测 |
+| 31-32 | 🔴 高 | 磁盘空间不足导致上传失败 |
+| 37-38 | 🔴 高 | 账户锁定后多次登录失败 |
+| 40-41 | 🔴 高 | 空指针异常导致 HTTP 请求失败 |
 
-双击任意一行 → 日志视图跳转到对应行，并高亮整个起止范围。
+双击任意一行 → 日志视图跳转到对应行，并高亮整个起止行范围。
 
-> 检测结果由本地模型生成，用词与严重度会随模型不同而变化；上表的「说明」列为示意，关键在于**行号能对上原文**。
+> 上表是一次真实运行的完整输出，未做人工修饰。1.7B 小模型的短板在这里很直观：6 条全部判成 high（严重度分级偏粗）、措辞笼统、漏掉了 26-27 行的死锁与 29-30 行的 Full GC，15-17 与 16-18 还有重叠。换 7-8B 模型后分级与描述会明显更细。**不变的是：行号能对上原文，双击即可核对。**
 
 ## 功能特性
 
@@ -68,6 +70,7 @@
 | 并发模型 | worker-object + `moveToThread`（不继承 QThread） | 线程与业务对象解耦；代价是对象不能有 parent、`run()` 里不跑槽函数 |
 | 服务生命周期 | 端口预检 + `/health` 轮询 500ms | 复用已在跑的实例省一次模型加载；避免端口冲突时静默失败 |
 | 模型输出容错 | 三段：掐头去尾 → 兼容 `[...]` / `{"findings":[...]}` 两种形态 → 逐条字段归一，失败返回 Retry 触发重试 | 小模型不保证输出合法 JSON，管线不能因此整条中断 |
+| 关闭模型思考 | 请求体带 `chat_template_kwargs: {enable_thinking: false}` | Qwen3 类模型默认先把整段 `reasoning_content` 说完再写正文，输出预算会被思维链吃光、JSON 只写一半就被截断（本项目踩过：512 token 全被思维链占用，正文只剩 121 字符）。该字段由 chat template 解释，模板里没有它的模型会直接忽略 |
 | 结果可追溯 | finding 带起止行号，双击跳转并高亮整段 | 「检测到异常」不够，运维要能一秒看到原始上下文 |
 
 > 更完整的取舍与放弃的替代方案见 [docs/DESIGN.md](docs/DESIGN.md) 第 7 节。
