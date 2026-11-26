@@ -1,0 +1,56 @@
+2026-03-15 09:58:01.112 [INFO ] [main] service starting, version=2.4.1, profile=prod
+2026-03-15 09:58:01.240 [INFO ] [config] loaded config from /etc/app/app.yaml (32 keys)
+2026-03-15 09:58:02.005 [INFO ] [db-pool] pool initialized: maxActive=50, maxWait=3000ms, driver=mysql-8.0.33
+2026-03-15 09:58:02.118 [INFO ] [http] listening on 0.0.0.0:8080, workerThreads=16
+2026-03-15 09:58:02.121 [INFO ] [main] startup complete in 1009ms
+2026-03-15 10:00:12.334 [INFO ] [http] GET /api/orders status=200 elapsed=23ms
+2026-03-15 10:00:15.901 [INFO ] [http] GET /api/users/8821 status=200 elapsed=11ms
+2026-03-15 10:01:44.220 [INFO ] [http] POST /api/orders status=201 elapsed=48ms
+2026-03-15 10:02:03.118 [WARN ] [http] GET /api/report/summary status=200 elapsed=2871ms slow-request threshold=2000ms
+2026-03-15 10:02:03.120 [WARN ] [cache] report summary cache miss for tenant=1042
+2026-03-15 10:03:11.007 [INFO ] [http] GET /api/health status=200 elapsed=2ms
+2026-03-15 10:04:22.781 [INFO ] [http] POST /api/orders status=201 elapsed=61ms
+2026-03-15 10:05:01.333 [WARN ] [db-pool] pool usage 82% active=41 idle=9 waiting=0
+2026-03-15 10:05:30.889 [INFO ] [http] GET /api/orders/9912 status=200 elapsed=17ms
+2026-03-15 10:06:02.441 [WARN ] [db-pool] pool usage 94% active=47 idle=3 waiting=2
+2026-03-15 10:06:44.902 [ERROR] [db-pool] connection pool exhausted active=50 waiting=17 maxWait=3000ms
+2026-03-15 10:06:44.905 [ERROR] [db-pool] failed to acquire connection within 3000ms, giving up
+2026-03-15 10:06:44.910 [ERROR] [http] POST /api/orders status=500 elapsed=3012ms cause=SQLTransientConnectionException
+2026-03-15 10:06:44.912 [ERROR] [order] createOrder aborted: could not obtain datasource connection
+2026-03-15 10:06:45.118 [ERROR] [db-pool] connection pool exhausted active=50 waiting=23 maxWait=3000ms
+2026-03-15 10:06:45.121 [ERROR] [http] POST /api/orders status=500 elapsed=3008ms cause=SQLTransientConnectionException
+2026-03-15 10:06:48.402 [ERROR] [db-pool] connection pool exhausted active=50 waiting=31 maxWait=3000ms
+2026-03-15 10:06:48.405 [ERROR] [http] GET /api/orders status=500 elapsed=3005ms cause=SQLTransientConnectionException
+2026-03-15 10:06:52.774 [WARN ] [db] long running transaction detected id=tx-88214 duration=91s
+2026-03-15 10:06:53.010 [WARN ] [db] long running transaction detected id=tx-88215 duration=88s
+2026-03-15 10:07:01.556 [ERROR] [db] deadlock found when trying to get lock; try restarting transaction
+2026-03-15 10:07:01.560 [ERROR] [order] createOrder aborted: deadlock on table order_item
+2026-03-15 10:07:12.993 [INFO ] [http] GET /api/health status=200 elapsed=2ms
+2026-03-15 10:07:30.221 [WARN ] [gc] full GC pause 1842ms heapUsed=3812MB heapMax=4096MB
+2026-03-15 10:07:33.007 [WARN ] [gc] full GC pause 2103ms heapUsed=3905MB heapMax=4096MB
+2026-03-15 10:07:41.884 [ERROR] [disk] write failed path=/var/app/upload/tmp/9f3a2c file=report-88231.zip errno=28 No space left on device
+2026-03-15 10:07:41.886 [ERROR] [upload] chunk upload failed part=3/7 reason=disk full
+2026-03-15 10:07:52.110 [WARN ] [auth] login failed user=1042 attempt=1/5 ip=10.22.8.31
+2026-03-15 10:07:53.402 [WARN ] [auth] login failed user=1042 attempt=2/5 ip=10.22.8.31
+2026-03-15 10:07:54.771 [WARN ] [auth] login failed user=1042 attempt=3/5 ip=10.22.8.31
+2026-03-15 10:07:56.018 [WARN ] [auth] login failed user=1042 attempt=4/5 ip=10.22.8.31
+2026-03-15 10:07:57.229 [ERROR] [auth] account locked after 5 failed attempts user=1042 ip=10.22.8.31
+2026-03-15 10:08:03.664 [INFO ] [http] GET /api/orders status=200 elapsed=19ms
+2026-03-15 10:08:14.902 [ERROR] [order] null pointer dereference in OrderService.calculateTotal tenant=null orderId=88231
+2026-03-15 10:08:14.903 [ERROR] [order] stack: OrderService.calculateTotal(OrderService.java:214)
+2026-03-15 10:08:14.904 [ERROR] [order] stack: OrderController.create(OrderController.java:88)
+2026-03-15 10:08:14.905 [ERROR] [http] POST /api/orders status=500 elapsed=7ms cause=NullPointerException
+2026-03-15 10:08:30.111 [INFO ] [db-pool] connection returned idle=11 active=39
+2026-03-15 10:09:02.442 [INFO ] [http] POST /api/orders status=201 elapsed=52ms
+2026-03-15 10:09:15.220 [INFO ] [http] GET /api/users/8821 status=200 elapsed=9ms
+2026-03-15 10:10:01.005 [WARN ] [db-pool] pool usage 86% active=43 idle=7 waiting=0
+2026-03-15 10:10:44.338 [INFO ] [http] GET /api/health status=200 elapsed=2ms
+2026-03-15 10:11:20.771 [WARN ] [gc] young GC pause 312ms heapUsed=2100MB
+2026-03-15 10:12:02.109 [INFO ] [http] GET /api/orders status=200 elapsed=21ms
+2026-03-15 10:12:33.005 [ERROR] [db-pool] connection pool exhausted active=50 waiting=9 maxWait=3000ms
+2026-03-15 10:12:33.008 [ERROR] [http] POST /api/orders status=500 elapsed=3004ms cause=SQLTransientConnectionException
+2026-03-15 10:12:50.442 [INFO ] [db-pool] connection returned idle=14 active=36
+2026-03-15 10:13:11.008 [INFO ] [http] GET /api/orders/9912 status=200 elapsed=16ms
+2026-03-15 10:13:44.220 [INFO ] [http] POST /api/orders status=201 elapsed=55ms
+2026-03-15 10:14:02.003 [INFO ] [main] shutdown requested by signal=SIGTERM
+2026-03-15 10:14:02.118 [INFO ] [main] graceful shutdown complete, uptime=16m1s

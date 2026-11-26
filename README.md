@@ -1,8 +1,42 @@
 # aii — 本地 AI 日志分析工具
 
+![C++](https://img.shields.io/badge/C%2B%2B-14-00599C?logo=cplusplus&logoColor=white)
+![Qt](https://img.shields.io/badge/Qt-5.14.2-41CD52?logo=qt&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-%E2%89%A5%203.5-064F8C?logo=cmake&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows%20%2F%20MinGW%207.3-0078D4)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 拖入一个日志文件，程序解析后调用**本地大模型**（llama.cpp 的 llama-server）做异常检测与总体摘要。全程离线，数据不出本机。这是一个 1-2 个月实习项目，核心是打通「Qt 桌面 UI → 长日志分块 → 本地 LLM 逐块检测 → 结构化结果跳转回日志」的完整闭环。
 
-> 开发状态：W1-W4 已实现，正在最终验证与收尾。设计细节见 [docs/DESIGN.md](docs/DESIGN.md)。
+> 开发状态：功能已完成，端到端可跑（`server_test` 控制台闭环 + GUI 手动验证）。设计细节见 [docs/DESIGN.md](docs/DESIGN.md)。
+
+## 效果示例
+
+仓库自带一段含典型故障的示例日志 [`samples/demo.log`](samples/demo.log)（56 行，模拟一个订单服务的运行记录）。拖进程序跑一次，得到：
+
+**输入节选**
+
+```
+16  2026-03-15 10:06:44.902 [ERROR] [db-pool] connection pool exhausted active=50 waiting=17 maxWait=3000ms
+26  2026-03-15 10:07:01.556 [ERROR] [db] deadlock found when trying to get lock; try restarting transaction
+31  2026-03-15 10:07:41.884 [ERROR] [disk] write failed ... errno=28 No space left on device
+37  2026-03-15 10:07:57.229 [ERROR] [auth] account locked after 5 failed attempts user=1042 ip=10.22.8.31
+39  2026-03-15 10:08:14.902 [ERROR] [order] null pointer dereference in OrderService.calculateTotal
+```
+
+**输出（检测结果列表）**
+
+| 行号 | 严重度 | 类型 | 说明 |
+|---|---|---|---|
+| 16 | 🔴 高 | 资源耗尽 | 数据库连接池打满（50/50，排队 17），已导致后续订单接口连续 500 |
+| 26 | 🟡 中 | 并发冲突 | 行锁死锁，与 24-25 行的长事务（91s/88s）时间吻合 |
+| 31 | 🔴 高 | 磁盘故障 | `errno=28 No space left on device`，分片上传中断 |
+| 37 | 🟡 中 | 安全 | 同一 IP 连续 5 次登录失败后锁定账户，疑似撞库 |
+| 39 | 🔴 高 | 空指针 | `OrderService.calculateTotal` 空指针，栈显示由 `/api/orders` 触发 |
+
+双击任意一行 → 日志视图跳转到对应行，并高亮整个起止范围。
+
+> 检测结果由本地模型生成，用词与严重度会随模型不同而变化；上表的「说明」列为示意，关键在于**行号能对上原文**。
 
 ## 功能特性
 
@@ -24,7 +58,19 @@
 | 推理后端 | [llama.cpp](https://github.com/ggml-org/llama.cpp) 预编译 `llama-server.exe`（子进程 + OpenAI 兼容 HTTP API，SSE 流式） |
 | 模型 | GGUF 格式；开发调试用 Qwen3-1.7B Q4_K_M，实际使用建议 7-8B Q4_K_M（CPU 推理） |
 
-> 为什么不直接链接 llama.cpp 的 C API：现代 llama.cpp 需要 C++17+/GCC 13.3+，本项目工具链（MinGW 7.3.0）编译不了，故采用「预编译子进程 + HTTP」方案（Route B，详见 DESIGN.md）。
+## 技术决策
+
+| 决策点 | 选择 | 理由 |
+|---|---|---|
+| 推理接入 | 子进程 + OpenAI 兼容 HTTP（Route B） | MinGW 7.3.0（GCC 7.3）编译不了要求 C++17+/GCC 13.3+ 的现代 llama.cpp；子进程还能把「模型崩溃」与「主程序」隔离，升级 exe 不用改代码 |
+| 长日志切分 | 按 token 预算分块，相邻块重叠 8 行 | 上下文窗口有限；重叠是为了让恰好跨越块边界的异常不被切断而漏报 |
+| 多块汇总 | map-reduce 两级（逐块检测 → 汇总报告） | 全部块塞不进一次请求；两级汇总既保住逐块细节，又产出全局视角 |
+| 并发模型 | worker-object + `moveToThread`（不继承 QThread） | 线程与业务对象解耦；代价是对象不能有 parent、`run()` 里不跑槽函数 |
+| 服务生命周期 | 端口预检 + `/health` 轮询 500ms | 复用已在跑的实例省一次模型加载；避免端口冲突时静默失败 |
+| 模型输出容错 | 三段：掐头去尾 → 兼容 `[...]` / `{"findings":[...]}` 两种形态 → 逐条字段归一，失败返回 Retry 触发重试 | 小模型不保证输出合法 JSON，管线不能因此整条中断 |
+| 结果可追溯 | finding 带起止行号，双击跳转并高亮整段 | 「检测到异常」不够，运维要能一秒看到原始上下文 |
+
+> 更完整的取舍与放弃的替代方案见 [docs/DESIGN.md](docs/DESIGN.md) 第 7 节。
 
 ## 架构总览
 
@@ -56,6 +102,9 @@
 aii/
 ├── CMakeLists.txt            # 主程序 aii + 控制台测试 server_test（W1 闭环）
 ├── README.md
+├── LICENSE                   # MIT
+├── samples/
+│   └── demo.log              # 示例日志（模拟订单服务，含典型故障，可直接试跑）
 ├── docs/
 │   └── DESIGN.md             # 设计文档：类职责/数据流/线程模型/进程生命周期
 ├── main.cpp                  # qRegisterMetaType + QSettings 归属
@@ -71,6 +120,16 @@ aii/
 ├── datatypes.h               # LogEntry / LogChunk / AnomalyFinding
 └── server_test.cpp           # W1 控制台闭环测试（仅依赖 QtCore+QtNetwork）
 ```
+
+## 项目规模
+
+| 指标 | 数值 |
+|---|---|
+| C++ 源文件 | 21 个（11 个 `.cpp` + 10 个 `.h`）+ 1 个 `.ui` |
+| 代码行数 | 约 2,600 行（非空约 2,200 行） |
+| 功能模块 | 9 个：UI / 管线编排 / 服务管理 / HTTP 客户端 / 日志解析 / 分块 / 提示词构建 / 结果解析 / 设置 |
+| 第三方依赖 | 无，只依赖 Qt 5.14（Widgets + Network）与标准库 |
+| 验证方式 | `server_test` 控制台闭环（不依赖 GUI）+ [`samples/demo.log`](samples/demo.log) 手动回归 |
 
 ## 构建与运行
 
@@ -106,3 +165,11 @@ cmake --build build
 - **端口冲突**：默认 8080 被占用（包括残留的孤儿 llama-server 进程）时服务启动失败，需 `tasklist | findstr llama` 后手动结束
 - **设置生效时机**：服务运行中修改端口/线程数/上下文大小，需重启推理服务后生效
 - **HTML 导出**：使用 Qt 内置 Markdown 转换，样式为基础渲染
+
+## 延伸阅读
+
+- [docs/DESIGN.md](docs/DESIGN.md) — 类职责、数据流、线程模型、llama-server 进程生命周期、关键设计决策与默认阈值速查表
+
+## 许可证
+
+[MIT](LICENSE) © 2026 周文浩
