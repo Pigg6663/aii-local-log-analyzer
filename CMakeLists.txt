@@ -87,3 +87,14 @@ add_executable(server_test
     ${LLAMA_INTEGRATION_SOURCES}
 )
 target_link_libraries(server_test PRIVATE Qt5::Core Qt5::Network)
+
+# 单元测试：只编三个纯函数模块（不依赖模型 / GUI / 网络），跑 ctest 即可
+enable_testing()
+add_executable(unit_tests
+    tests/unit_tests.cpp
+    logparser.cpp
+    logchunker.cpp
+    resultparser.cpp
+)
+target_link_libraries(unit_tests PRIVATE Qt5::Core)
+add_test(NAME unit_tests COMMAND unit_tests)

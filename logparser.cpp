@@ -166,7 +166,12 @@ bool LogParser::parseFile(const QString &path, QVector<LogEntry> *entries,
 
     const QByteArray data = file.readAll();
     const QString text = detectAndDecode(data);
-    const QStringList lines = text.split('\n');
+    QStringList lines = text.split('\n');
+    // 文件以换行结尾时，split 会多出一个空段——那不是一行，减掉它，
+    // 否则报告里的「共 N 行」会比实际多 1（连续两个换行结尾时，
+    // 倒数第二个空段才是真正的空行，不做处理）。
+    if (!lines.isEmpty() && lines.last().isEmpty())
+        lines.removeLast();
 
     int lineNo = 1;
     for (const QString &rawLine : lines) {
