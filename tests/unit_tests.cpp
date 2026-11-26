@@ -314,6 +314,96 @@ void testResultParser()
     }
 }
 
+// 结果合并：模型逐行输出同一串连续错误时，列表里会出现一堆 33-33 / 34-34，
+// 合并后应只剩一条 33-36。
+void testResultParserMerge()
+{
+    qInfo().noquote() << "ResultParser::mergeAdjacent";
+
+    const auto F = [](const char *sev, int s, int e, const char *sum,
+                      const char *det) {
+        AnomalyFinding f;
+        f.severity = sev;
+        f.startLine = s;
+        f.endLine = e;
+        f.summary = sum;
+        f.details = det;
+        return f;
+    };
+
+    // 1) 逐行同因 → 合并成一条区间
+    {
+        const QVector<AnomalyFinding> in{
+            F("high", 33, 33, "认证失败尝试记录", "d1"),
+            F("high", 34, 34, "认证失败尝试记录", "d2"),
+            F("high", 35, 35, "认证失败尝试记录", "d3"),
+            F("high", 36, 36, "认证失败尝试记录", "d4")};
+        const auto out = ResultParser::mergeAdjacent(in);
+        CHECK_EQ(out.size(), 1);
+        if (out.size() == 1) {
+            CHECK_EQ(out[0].startLine, 33);
+            CHECK_EQ(out[0].endLine, 36);
+        }
+    }
+
+    // 2) 摘要不同 → 即使行号相邻也不合并
+    {
+        const QVector<AnomalyFinding> in{
+            F("high", 16, 16, "连接池耗尽", "a"),
+            F("high", 17, 17, "HTTP 超时", "b")};
+        CHECK_EQ(ResultParser::mergeAdjacent(in).size(), 2);
+    }
+
+    // 3) 摘要相同但中间隔了行（21 与 23）→ 不合并
+    {
+        const QVector<AnomalyFinding> in{
+            F("high", 21, 21, "HTTP请求超时", "a"),
+            F("high", 23, 23, "HTTP请求超时", "b")};
+        CHECK_EQ(ResultParser::mergeAdjacent(in).size(), 2);
+    }
+
+    // 4) 区间重叠 → 合并，终点评取较大者，details 留更长的
+    {
+        const QVector<AnomalyFinding> in{
+            F("high", 10, 14, "磁盘写入失败", "短"),
+            F("high", 12, 18, "磁盘写入失败", "这一条的解释更长一些")};
+        const auto out = ResultParser::mergeAdjacent(in);
+        CHECK_EQ(out.size(), 1);
+        if (out.size() == 1) {
+            CHECK_EQ(out[0].startLine, 10);
+            CHECK_EQ(out[0].endLine, 18);
+            CHECK_EQ(out[0].details, QString("这一条的解释更长一些"));
+        }
+    }
+
+    // 5) 乱序输入 → 先排序再合并，结果不受输入顺序影响
+    {
+        const QVector<AnomalyFinding> in{
+            F("high", 36, 36, "认证失败尝试记录", "d"),
+            F("high", 33, 33, "认证失败尝试记录", "a"),
+            F("high", 35, 35, "认证失败尝试记录", "c"),
+            F("high", 34, 34, "认证失败尝试记录", "b")};
+        const auto out = ResultParser::mergeAdjacent(in);
+        CHECK_EQ(out.size(), 1);
+        if (out.size() == 1) {
+            CHECK_EQ(out[0].startLine, 33);
+            CHECK_EQ(out[0].endLine, 36);
+        }
+    }
+
+    // 6) 空输入 / 单条 → 原样返回
+    {
+        CHECK_EQ(ResultParser::mergeAdjacent({}).size(), 0);
+        const QVector<AnomalyFinding> one{F("low", 5, 5, "单条", "d")};
+        const auto out = ResultParser::mergeAdjacent(one);
+        CHECK_EQ(out.size(), 1);
+        if (out.size() == 1) {
+            CHECK_EQ(out[0].startLine, 5);
+            CHECK_EQ(out[0].endLine, 5);
+        }
+    }
+}
+
 } // namespace
 
 int main()
@@ -326,6 +416,7 @@ int main()
     testLogChunkerBasics();
     testLogChunkerOverlap();
     testResultParser();
+    testResultParserMerge();
 
     if (g_failures == 0) {
         qInfo().noquote() << QString("== 全部通过：%1 项断言 ==").arg(g_checks);

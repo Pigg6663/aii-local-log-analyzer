@@ -529,9 +529,13 @@ void MainWindow::onFindingFound(const AnomalyFinding &finding)
     auto *sevItem = new QTableWidgetItem(finding.severity);
     sevItem->setForeground(sevColor(finding.severity));
 
-    const QString lineText = finding.startLine > 0
-        ? QString("%1-%2").arg(finding.startLine).arg(finding.endLine)
-        : QString("?");
+    // 单行结果只显示一个行号（"33"），多行才显示区间（"33-36"）：
+    // 模型逐行输出时会有一堆 "33-33"，比 "33" 难读也显得零碎
+    const QString lineText = finding.startLine <= 0
+        ? QString("?")
+        : (finding.endLine > finding.startLine
+               ? QString("%1-%2").arg(finding.startLine).arg(finding.endLine)
+               : QString::number(finding.startLine));
     auto *lineItem = new QTableWidgetItem(lineText);
     lineItem->setData(Qt::UserRole, finding.startLine);       // 双击跳转用
     lineItem->setData(Qt::UserRole + 1, finding.endLine);

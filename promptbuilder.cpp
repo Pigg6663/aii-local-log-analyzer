@@ -75,7 +75,12 @@ QString PromptBuilder::systemPrompt()
         "3. 行号必须引用日志中实际出现的行号。\n"
         "4. 没有发现异常时输出空数组 []。\n"
         "5. 不要编造日志中不存在的内容，异常判定从严（宁缺毋滥）。\n"
-        "6. 相邻且同因的异常合并为一条，用起止行号表示范围。");
+        "6. severity 按影响分级，不要一律给 high：\n"
+        "   critical = 服务不可用 / 数据损坏；high = 功能失败、请求报错；\n"
+        "   medium = 性能退化、资源水位偏高；low = 需关注但尚无实际故障。\n"
+        "7. 相邻且同因的异常必须合并为一条，用起止行号表示范围。\n"
+        "   例如第 33~36 行是同一账号连续 4 次登录失败，应输出一条 start_line=33、end_line=36，\n"
+        "   而不是拆成 4 条 start_line 与 end_line 相同的记录。");
 }
 
 QString PromptBuilder::chunkDetectionPrompt(const LogChunk &chunk)

@@ -23,6 +23,12 @@ public:
 
     static ParseResult parseFindings(const QString &raw);
 
+    // 合并"相邻且摘要相同"的条目：模型有时会把同一串连续错误逐行拆成多条
+    // （第 33/34/35/36 行各一条），合并后只留一条 33-36。
+    // 判定条件：摘要去空白后完全相同，且下一段的起点 <= 当前段的终点 + 1
+    //（相邻或重叠）。保留较大者作为合并后的起止行，details 取最长的那条。
+    static QVector<AnomalyFinding> mergeAdjacent(const QVector<AnomalyFinding> &in);
+
 private:
     // 清洗：剥 ```json 围栏、掐头去尾找第一个 {/[ 到最后一个 }/]
     static QString extractJsonText(const QString &raw);

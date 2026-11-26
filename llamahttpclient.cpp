@@ -45,7 +45,15 @@ bool LlamaHttpClient::chat(const QString &systemPrompt, const QString &userPromp
         {"messages", messages},
         {"temperature", temperature},
         {"max_tokens", maxTokens},
-        {"stream", true}
+        {"stream", true},
+        // 固定种子：同一份日志重复分析应得到同样的结果。
+        // 不固定时，1.7B 模型在 temperature 0.2 下同一段日志会给出 6 条或 15 条
+        // 差别很大的结果（实测两种都出现过），既无法复现也无法向用户解释。
+        {"seed", 42},
+        // 强制贪心解码。只把 temperature 设成 0 并不够：llama-server 实测仍在采样，
+        // 同一请求两次分别给出 11 条和 5 条结果；top_k=1 之后连跑三次输出逐字节一致。
+        {"top_k", 1},
+        {"top_p", 1.0}
     };
     if (m_jsonMode)
         body.insert("response_format", QJsonObject{ {"type", "json_object"} });

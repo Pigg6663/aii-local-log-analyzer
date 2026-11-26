@@ -6,6 +6,8 @@
 #include <QJsonParseError>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 QString ResultParser::extractJsonText(const QString &raw)
 {
     // 掐头去尾：第一个 { 或 [ 到最后一个 } 或 ]
@@ -119,4 +121,40 @@ ResultParser::ParseResult ResultParser::parseFindings(const QString &raw)
 
     result.status = ParseStatus::Ok;
     return result;
+}
+
+QVector<AnomalyFinding> ResultParser::mergeAdjacent(const QVector<AnomalyFinding> &in)
+{
+    if (in.size() < 2)
+        return in;
+
+    // 先按起始行排序，合并规则才只依赖相邻元素
+    QVector<AnomalyFinding> sorted = in;
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [](const AnomalyFinding &a, const AnomalyFinding &b) {
+                         if (a.startLine != b.startLine)
+                             return a.startLine < b.startLine;
+                         return a.endLine < b.endLine;
+                     });
+
+    QVector<AnomalyFinding> out;
+    out.reserve(sorted.size());
+    for (const AnomalyFinding &f : sorted) {
+        if (!out.isEmpty()) {
+            AnomalyFinding &last = out.last();
+            const bool sameSummary =
+                last.summary.simplified() == f.summary.simplified();
+            // 相邻（gap ≤ 1 行）或重叠才合并；中间隔了行就不算同一串事件
+            const bool touching = f.startLine > 0 && last.endLine > 0
+                                  && f.startLine <= last.endLine + 1;
+            if (sameSummary && touching) {
+                last.endLine = qMax(last.endLine, f.endLine);
+                if (f.details.size() > last.details.size())
+                    last.details = f.details;   // 留信息量最大的那条解释
+                continue;
+            }
+        }
+        out.append(f);
+    }
+    return out;
 }

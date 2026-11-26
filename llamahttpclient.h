@@ -24,9 +24,11 @@ public:
 
     // 发送一次 chat 请求，阻塞到完成。成功返回 true，*replyText 为完整回复。
     // 失败 / 超时 / 取消返回 false，*errorString 给出原因。
+    // temperature 默认 0（贪心解码）：日志分析要的是可复现的判断，不是多样性；
+    // 配 body 里的固定 seed，同一份日志重复分析会得到相同结果。
     bool chat(const QString &systemPrompt, const QString &userPrompt,
               QString *replyText, QString *errorString,
-              int maxTokens = 512, double temperature = 0.2);
+              int maxTokens = 512, double temperature = 0.0);
 
     void abortCurrent();                    // 取消当前请求（chat() 返回 false）
     bool isBusy() const { return m_reply != nullptr; }

@@ -133,7 +133,9 @@ void AnalysisWorker::analyze(const QString &filePath, const QString &serverBaseU
 
             const ResultParser::ParseResult parsed = ResultParser::parseFindings(raw);
             if (parsed.status == ResultParser::ParseStatus::Ok) {
-                findings = parsed.findings;
+                // 模型常把同一串连续错误逐行拆成多条（33-33、34-34、35-35、36-36），
+                // 这里把"摘要相同且行号相邻/重叠"的合并成一条 33-36，避免结果列表碎片化
+                findings = ResultParser::mergeAdjacent(parsed.findings);
                 break;
             }
             // 解析失败：换重试提示词（带日志原文 + 坏输出 + 严格指令）
